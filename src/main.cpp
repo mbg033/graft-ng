@@ -80,6 +80,7 @@ int main(int argc, const char** argv)
         const boost::property_tree::ptree& server_conf = config.get_child("server");
         sopts.http_address = server_conf.get<string>("http-address");
         sopts.coap_address = server_conf.get<string>("coap-address");
+        sopts.poll_value = server_conf.get<int>("poll-value");
         sopts.http_connection_timeout = server_conf.get<double>("http-connection-timeout");
         sopts.workers_count = server_conf.get<int>("workers-count");
         sopts.worker_queue_len = server_conf.get<int>("worker-queue-len");
@@ -92,6 +93,23 @@ int main(int argc, const char** argv)
         graft::setCoapRouters(manager);
         graft::setHttpRouters(manager);
         manager.enableRouting();
+
+        int t = 0;
+        auto action = [&](const graft::Router::vars_t& vars, const graft::Input& input, graft::Context& ctx, graft::Output& output)->graft::Status
+//        auto worker_action = [&t](const graft::Router::vars_t& vars, const graft::Input& input, graft::Context& ctx, graft::Output& output)->graft::Status
+        {
+            ++t;
+            return graft::Status::Ok;
+        };
+
+        graft::Router::Handler3 h3 (nullptr, action, nullptr);
+        graft::RequestBase* rb = graft::RequestBase::Create<graft::TimerRequest>(
+                    manager,
+                    h3
+                    ).get();
+
+        auto& tl = manager.get_timerList();
+        tl.push(std::chrono::seconds(5), rb->get_itself());
 
         graft::GraftServer server;
 
