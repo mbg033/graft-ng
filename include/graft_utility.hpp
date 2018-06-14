@@ -60,17 +60,15 @@ namespace graft
         void fixup_tail(node *current)
         {
             std::unique_lock<std::mutex> lk(current->m);
-            while (node* const next = current->next.get())
+            while (node* next = current->next.get())
             {
                 std::unique_lock<std::mutex> next_lk(next->m);
 
-                if (next->expired())
-                {
-                    std::unique_ptr<node> old_next = std::move(current->next);
-                    current->next = std::move(next->next);
-                    next_lk.unlock();
-                }
-                else return;
+                if (!next->expired()) return;
+                std::unique_ptr<node> old_next = std::move(current->next);
+                current->next = std::move(next->next);
+                next = current->next.get();
+                next_lk.unlock();
             }
         }
 
@@ -184,8 +182,8 @@ namespace graft
         {
             fixup_tail(&head);
 
-            node *current = &head;
             std::unique_lock<std::mutex> lk(head.m);
+            node *current = &head;
 
             while (node* const next = current->next.get())
             {
@@ -193,8 +191,9 @@ namespace graft
 
                 if (p(*next->data))
                 {
+                    bool res = f(*next->data);
                     update_time_next_unlock(current, lk);
-                    return f(*next->data);
+                    return res;
                 }
                 else lk.unlock();
                 current = next;
@@ -281,7 +280,7 @@ namespace graft
                 return (found_entry != nullptr);
             }
 
-            bool applyFor(Key const& key, std::function<bool(Value&)> f)
+            bool applyFor(Key const& key, const std::function<bool(Value&)>& f)
             {
                 return m_data.findAndApplyFirstOf(
                     [&](BucketValue const& item)
@@ -332,7 +331,7 @@ namespace graft
             return getBucket(key).hasKey(key);
         }
 
-        bool apply(Key const& key, std::function<bool(Value&)> f)
+        bool apply(Key const& key, const std::function<bool(Value&)>& f)
         {
             return getBucket(key).applyFor(key, f);
         }

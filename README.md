@@ -54,3 +54,12 @@ git submodule update --recursive
 #### Linux (Ubuntu)
 #### MacOS
 #### Windows
+
+### Tests
+
+To build graft_server_test before build run *cmake* with additional parameter
+
+```bash
+cmake .. -DOPT_BUILD_TEST
+```
+

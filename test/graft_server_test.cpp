@@ -310,20 +310,43 @@ TEST(Context, multithreaded)
     std::vector<std::string> v_keys;
     {//init global
         graft::Context ctx(m);
-        const char keys[] = "abcdefghijklmnopqrstuvwxyz";
-        const int keys_cnt = sizeof(keys)/sizeof(keys[0]);
+//        const char keys[] = "abcdefghijklmnopqrstuvwxyz";
+        const char keys[] = "abcdefghij";
+        const int keys_cnt = (sizeof(keys)-1)/sizeof(keys[0]);
         for(int i = 0; i< keys_cnt; ++i)
         {
+/*
             char ch1 = keys[(5*i)%keys_cnt], ch2 = keys[(5*i+7)%keys_cnt];
-            std::string key(1, ch1); key += ch2;
+//            std::string key(1, ch1); key += ch2;
+*/
+            std::string key(1, keys[i]);
             v_keys.push_back(key);
             ctx.global[key] = (uint64_t)0;
         }
     }
 
+    for(auto& k : v_keys)
+    {
+        std::cout << k << " ";
+    }
+    std::cout << std::endl;
+
+
     std::atomic<uint64_t> g_count(0);
-    std::function<bool(uint64_t&)> f = [](uint64_t& v)->bool { ++v; return true; };
+    std::atomic<uint64_t> g_cf(0);
+    std::atomic<uint64_t> g_inc(0);
+    std::function<bool(uint64_t&)> f = [&g_cf,&g_inc](uint64_t& v)->bool
+    {
+        static std::atomic_int entered(0);
+        //assert(entered++==0);
+        ++v;
+        ++g_cf;
+        ++g_inc;
+        //assert(--entered==0);
+        return true;
+    };
     int pass_cnt;
+/*
     {//get pass count so that overall will take about 1000 ms
         graft::Context ctx(m);
         auto begin = std::chrono::high_resolution_clock::now();
@@ -336,13 +359,31 @@ TEST(Context, multithreaded)
         std::chrono::high_resolution_clock::duration d = std::chrono::milliseconds(1000);
         pass_cnt = d.count() / (end - begin).count();
     }
-
     EXPECT_LE(2, pass_cnt);
-
+*/
+    pass_cnt = 32000;
     //forward and backward passes
     std::atomic_int stop(0);
 
-    auto f_f = [&] ()
+    auto f_f = [&g_count,&stop,&f,&m,&pass_cnt,&v_keys,&g_inc] ()
+    {
+        graft::Context ctx(m);
+        int cnt = 0;
+        for(int i=0; i<pass_cnt; ++i)
+        {
+            std::for_each(v_keys.begin(), v_keys.end(), [&g_count,&stop,&f,&ctx,&cnt,&g_inc] (auto& key)
+            {
+                while(!stop && cnt == g_count);
+                uint64_t save = g_inc;
+                ctx.global.apply(key, f);
+                assert(save < g_inc); // || key == "j");
+                cnt = ++g_count;
+            });
+        }
+        ++stop;
+    };
+/*
+    auto f_f1 = [&] ()
     {
         graft::Context ctx(m);
         int cnt = 0;
@@ -372,19 +413,27 @@ TEST(Context, multithreaded)
         }
         ++stop;
     };
+*/
 
-    std::thread tf(f_f);
-    std::thread tb(f_b);
+    std::thread tf0(f_f);
+//    std::thread tb0(f_b);
+    std::thread tb0(f_f);
+    std::thread tf1(f_f);
+//    std::thread tb1(f_b);
+    int th_cnt = 3;
 
     int main_count = 0;
-    while( stop < 2)
+//    while( stop < 4)
+    while( stop < th_cnt)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         ++g_count;
         ++main_count;
     }
-    tf.join();
-    tb.join();
+    tf0.join();
+    tb0.join();
+    tf1.join();
+//    tb1.join();
 
     uint64_t sum = 0;
     {
@@ -395,7 +444,11 @@ TEST(Context, multithreaded)
             sum += v;
         });
     }
+    std::cout << "g_count=" << g_count << " main_count=" << main_count;
+    std::cout << " g_count-main_count-g_cf=" << g_count-main_count-g_cf << std::endl;
+    EXPECT_EQ(g_cf, g_count-main_count);
     EXPECT_EQ(sum, g_count-main_count);
+    EXPECT_EQ(v_keys.size()*(1+pass_cnt*th_cnt), g_count-main_count);
 }
 
 /////////////////////////////////

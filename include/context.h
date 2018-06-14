@@ -195,9 +195,9 @@ struct Context
         }
 
         template<typename T>
-        bool apply(const std::string& key, std::function<bool(T&)> f)
+        bool apply(const std::string& key, const std::function<bool(T&)>& f)
         {
-            return m_map.apply(key, [f](boost::any& a)
+            return m_map.apply(key, [&f](boost::any& a)
             { return f(boost::any_cast<T&>(a)); }
             );
         }
