@@ -6,6 +6,7 @@
 #include <boost/property_tree/ini_parser.hpp>
 // #include <boost/tokenizer.hpp>
 #include <boost/filesystem.hpp>
+#include <functional>
 #include <csignal>
 
 namespace po = boost::program_options;
@@ -16,10 +17,11 @@ namespace graft {
   void setHttpRouters(Manager& m);
 }
 
-static graft::GraftServer server;
-static void signal_handler_stop(int sig_num) {
-    LOG_PRINT_L0("Stoping server");
-    server.stop();
+static std::function<void (int sig_num)> stop_handler;
+
+static void signal_handler_stop(int sig_num)
+{
+    if(stop_handler) stop_handler(sig_num);
 }
 
 int main(int argc, const char** argv)
@@ -118,7 +120,16 @@ int main(int argc, const char** argv)
         manager.enableRouting();
 
         LOG_PRINT_L0("Starting server on: [http] " << sopts.http_address << ", [coap] " << sopts.coap_address);
-        server.serve(manager.get_mg_mgr());
+        graft::GraftServer server;
+        server.bind(manager);
+
+        stop_handler = [&manager](int sig_num)
+        {
+            LOG_PRINT_L0("Stoping server");
+            manager.stop();
+        };
+
+        manager.serve();
 
     } catch (const std::exception & e) {
         std::cerr << "Exception thrown: " << e.what() << std::endl;

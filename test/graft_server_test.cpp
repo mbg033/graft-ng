@@ -411,8 +411,8 @@ public:
     static std::thread t_CN;
     static std::thread t_srv;
     static bool crypton_ready;
-    static graft::Manager* pmanager;
-    static std::atomic<graft::GraftServer*> pserver;
+    static std::atomic<graft::Manager*> pmanager;
+    static graft::GraftServer* pserver;
 
     const std::string uri_base = "http://localhost:9084/root/";
     const std::string dapi_url = "http://localhost:9084/dapi";
@@ -449,7 +449,7 @@ private:
 
                 struct http_message *hm = (struct http_message *) ev_data;
                 std::string data(hm->uri.p, hm->uri.len);
-                graft::Context ctx(pmanager->get_gcm());
+                graft::Context ctx(pmanager.load()->get_gcm());
                 int method = ctx.global["method"];
                 if(method == METHOD_GET)
                 {
@@ -534,7 +534,8 @@ private:
 
         graft::GraftServer gs;
         pserver = &gs;
-        gs.serve(manager.get_mg_mgr());
+        gs.bind(manager);
+        manager.serve();
     }
 
 public:
@@ -753,7 +754,7 @@ protected:
         t_CN = std::thread([]{ TempCryptoNodeServer::run(); });
         t_srv = std::thread([]{ run_server(); });
 
-        while(!TempCryptoNodeServer::ready || !pserver || !pserver.load()->ready())
+        while(!TempCryptoNodeServer::ready || !pmanager || !pmanager.load()->ready())
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -785,15 +786,15 @@ graft::Router::Handler3 GraftServerTest::h3_test;
 std::thread GraftServerTest::t_CN;
 std::thread GraftServerTest::t_srv;
 bool GraftServerTest::crypton_ready = false;
-graft::Manager* GraftServerTest::pmanager = nullptr;
-std::atomic<graft::GraftServer*> GraftServerTest::pserver(nullptr);
+std::atomic<graft::Manager*> GraftServerTest::pmanager(nullptr);
+graft::GraftServer* GraftServerTest::pserver(nullptr);
 
 bool GraftServerTest::TempCryptoNodeServer::ready = false;
 bool GraftServerTest::TempCryptoNodeServer::stop = false;
 
 TEST_F(GraftServerTest, GETtp)
 {//GET -> threadPool
-    graft::Context ctx(pmanager->get_gcm());
+    graft::Context ctx(pmanager.load()->get_gcm());
     ctx.global["method"] = METHOD_GET;
     ctx.global["requestPath"] = std::string("0");
     iocheck = "0"; skip_ctx_check = true;
@@ -820,7 +821,7 @@ TEST_F(GraftServerTest, clientTimeout)
 
 TEST_F(GraftServerTest, cryptonTimeout)
 {//GET -> threadPool -> CryptoNode -> timeout
-    graft::Context ctx(pmanager->get_gcm());
+    graft::Context ctx(pmanager.load()->get_gcm());
     ctx.global["method"] = METHOD_GET;
     ctx.global["requestPath"] = std::string("0");
     iocheck = "0"; skip_ctx_check = true;
@@ -865,7 +866,7 @@ TEST_F(GraftServerTest, timerEvents)
             return graft::Status::Forward;
         };
 
-        pmanager->addPeriodicTask(
+        pmanager.load()->addPeriodicTask(
                     graft::Router::Handler3(nullptr, action, nullptr),
                     std::chrono::milliseconds(ms)
                     );
@@ -881,7 +882,7 @@ TEST_F(GraftServerTest, timerEvents)
     for(int i=0; i<N; ++i)
     {
         int n = ms_all/((i+1)*ms_step);
-        n -= (pmanager->get_c_opts().upstream_request_timeout*1000*n)/((i+1)*ms_step);
+        n -= (pmanager.load()->get_c_opts().upstream_request_timeout*1000*n)/((i+1)*ms_step);
         EXPECT_LE(n-2, cntrs[i]);
         EXPECT_LE(cntrs[i], n+1);
         EXPECT_EQ(cntrs_all[i]-1, 2*cntrs[i]);
@@ -890,7 +891,7 @@ TEST_F(GraftServerTest, timerEvents)
 
 TEST_F(GraftServerTest, GETtpCNtp)
 {//GET -> threadPool -> CryptoNode -> threadPool
-    graft::Context ctx(pmanager->get_gcm());
+    graft::Context ctx(pmanager.load()->get_gcm());
     ctx.global["method"] = METHOD_GET;
     ctx.global["requestPath"] = std::string("0");
     iocheck = "0"; skip_ctx_check = true;
@@ -906,7 +907,7 @@ TEST_F(GraftServerTest, GETtpCNtp)
 
 TEST_F(GraftServerTest, POSTtp)
 {//POST -> threadPool
-    graft::Context ctx(pmanager->get_gcm());
+    graft::Context ctx(pmanager.load()->get_gcm());
     ctx.global["method"] = METHOD_POST;
     std::string jsonx = "{\"s\":\"0\"}";
     iocheck = "0"; skip_ctx_check = true;
@@ -922,7 +923,7 @@ TEST_F(GraftServerTest, POSTtp)
 
 TEST_F(GraftServerTest, POSTtpCNtp)
 {//POST -> threadPool -> CryptoNode -> threadPool
-    graft::Context ctx(pmanager->get_gcm());
+    graft::Context ctx(pmanager.load()->get_gcm());
     ctx.global["method"] = METHOD_POST;
     std::string jsonx = "{\"s\":\"0\"}";
     iocheck = "0"; skip_ctx_check = true;
@@ -941,7 +942,7 @@ TEST_F(GraftServerTest, POSTtpCNtp)
 
 TEST_F(GraftServerTest, clPOSTtp)
 {//POST cmdline -> threadPool
-    graft::Context ctx(pmanager->get_gcm());
+    graft::Context ctx(pmanager.load()->get_gcm());
     ctx.global["method"] = METHOD_POST;
     std::string jsonx = "{\\\"s\\\":\\\"0\\\"}";
     iocheck = "0"; skip_ctx_check = true;
@@ -958,7 +959,7 @@ TEST_F(GraftServerTest, clPOSTtp)
 
 TEST_F(GraftServerTest, clPOSTtpCNtp)
 {//POST cmdline -> threadPool -> CryptoNode -> threadPool
-    graft::Context ctx(pmanager->get_gcm());
+    graft::Context ctx(pmanager.load()->get_gcm());
     ctx.global["method"] = METHOD_POST;
     std::string jsonx = "{\\\"s\\\":\\\"0\\\"}";
     iocheck = "0"; skip_ctx_check = true;

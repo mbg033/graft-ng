@@ -57,8 +57,8 @@ struct CryptonodeHandlersTest : public ::testing::Test
     // this     is blocking function that will not end until manager stopped explicitly
     void startServer()
     {
-
-        server->serve(manager->get_mg_mgr());
+        server->bind(*manager);
+        manager->serve();
     }
 
     CryptonodeHandlersTest()
@@ -70,14 +70,14 @@ struct CryptonodeHandlersTest : public ::testing::Test
         LOG_PRINT_L2("L2");
 
         ServerOpts sopts {"localhost:8855", "localhost:8856", 5.0, 5.0, 0, 0, "localhost:28281/sendrawtransaction", 1000};
-        manager = std::unique_ptr<Manager>(new Manager(sopts));
+        manager = std::make_unique<Manager>(sopts);
 
         Router router;
         graft::registerGetInfoRequest(router);
         graft::registerSendRawTxRequest(router);
         manager->addRouter(router);
         manager->enableRouting();
-        server = std::unique_ptr<GraftServer>(new GraftServer);
+        server = std::make_unique<GraftServer>();
 
         server_thread = std::thread([this]() {
             this->startServer();
@@ -85,7 +85,7 @@ struct CryptonodeHandlersTest : public ::testing::Test
 
         LOG_PRINT_L0("Server thread started..");
 
-        while (!server->ready()) {
+        while (!manager->ready()) {
             LOG_PRINT_L0("waiting for server");
             std::this_thread::sleep_for(1s);
         }
@@ -192,50 +192,57 @@ struct FooBar
 
 TEST_F(CryptonodeHandlersTest, sendrawtx)
 {
-    MGINFO_YELLOW("*** This test requires running cryptonode with public testnet blockchain running on localhost:28881. If not running, test will fail ***");
+    try
+    {
+        MGINFO_YELLOW("*** This test requires running cryptonode with public testnet blockchain running on localhost:28881. If not running, test will fail ***");
 
-    FooBar fb {"1", 2};
+        FooBar fb {"1", 2};
 
-    // open wallet
-    const std::string wallet_path = "test_wallet";
-    tools::wallet2 wallet(true);
+        // open wallet
+        const std::string wallet_path = "test_wallet";
+        tools::wallet2 wallet(true);
 
-    wallet.load(wallet_path, "");
-    wallet.init("localhost:28881");
-    wallet.refresh();
-    wallet.store();
-    std::cout << "wallet addr: " <<  wallet.get_account().get_public_address_str(true) << std::endl;
+        wallet.load(wallet_path, "");
+        wallet.init("localhost:28881");
+        wallet.refresh();
+        wallet.store();
+        std::cout << "wallet addr: " <<  wallet.get_account().get_public_address_str(true) << std::endl;
 
-    const uint64_t AMOUNT_1_GRFT = 10000000000000;
-    // send to itself
-    cryptonote::tx_destination_entry de (AMOUNT_1_GRFT, wallet.get_account().get_keys().m_account_address);
-    std::vector<cryptonote::tx_destination_entry> dsts; dsts.push_back(de);
-    std::vector<uint8_t> extra;
-    std::vector<tools::wallet2::pending_tx> ptx = wallet.create_transactions_2(dsts, 4, 0, 0, extra, true);
-    ASSERT_TRUE(ptx.size() == 1);
-    SendRawTxRequest req;
-    ASSERT_TRUE(createSendRawTxRequest(ptx.at(0), req));
-    std::string request_s = req.toJson().GetString();
-    LOG_PRINT_L2("sending to supernode: " << request_s);
-    std::string response_s = send_request("http://localhost:8855/cryptonode/sendrawtx",
-                                          escape_string_curl(request_s));
-    EXPECT_FALSE(response_s.empty());
-    LOG_PRINT_L2("response: " << response_s);
-    Input in; in.load(response_s);
-    SendRawTxResponse  resp = in.get<SendRawTxResponse>();
-    wallet.store();
-    EXPECT_TRUE(resp.status == "OK");
-    EXPECT_FALSE(resp.not_relayed);
-    EXPECT_FALSE(resp.low_mixin);
-    EXPECT_FALSE(resp.double_spend);
-    EXPECT_FALSE(resp.invalid_input);
-    EXPECT_FALSE(resp.invalid_output);
-    EXPECT_FALSE(resp.too_big);
-    EXPECT_FALSE(resp.overspend);
-    EXPECT_FALSE(resp.fee_too_low);
-    EXPECT_FALSE(resp.not_rct);
+        const uint64_t AMOUNT_1_GRFT = 10000000000000;
+        // send to itself
+        cryptonote::tx_destination_entry de (AMOUNT_1_GRFT, wallet.get_account().get_keys().m_account_address);
+        std::vector<cryptonote::tx_destination_entry> dsts; dsts.push_back(de);
+        std::vector<uint8_t> extra;
+        std::vector<tools::wallet2::pending_tx> ptx = wallet.create_transactions_2(dsts, 4, 0, 0, extra, true);
+        ASSERT_TRUE(ptx.size() == 1);
+        SendRawTxRequest req;
+        ASSERT_TRUE(createSendRawTxRequest(ptx.at(0), req));
+        std::string request_s = req.toJson().GetString();
+        LOG_PRINT_L2("sending to supernode: " << request_s);
+        std::string response_s = send_request("http://localhost:8855/cryptonode/sendrawtx",
+                                              escape_string_curl(request_s));
+        EXPECT_FALSE(response_s.empty());
+        LOG_PRINT_L2("response: " << response_s);
+        Input in; in.load(response_s);
+        SendRawTxResponse  resp = in.get<SendRawTxResponse>();
+        wallet.store();
+        EXPECT_TRUE(resp.status == "OK");
+        EXPECT_FALSE(resp.not_relayed);
+        EXPECT_FALSE(resp.low_mixin);
+        EXPECT_FALSE(resp.double_spend);
+        EXPECT_FALSE(resp.invalid_input);
+        EXPECT_FALSE(resp.invalid_output);
+        EXPECT_FALSE(resp.too_big);
+        EXPECT_FALSE(resp.overspend);
+        EXPECT_FALSE(resp.fee_too_low);
+        EXPECT_FALSE(resp.not_rct);
 
-    LOG_PRINT_L2("Stopping server...");
+        LOG_PRINT_L2("Stopping server...");
+    }
+    catch(const std::exception& e)
+    {
+        LOG_PRINT_L2("Exception occurred : " << e.what());
+    }
     manager->stop();
     server_thread.join();
     LOG_PRINT_L2("Server stopped, Server thread done...");
