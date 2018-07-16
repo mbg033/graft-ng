@@ -6,6 +6,7 @@
 extern "C" {
 #endif
     void graft_bt();
+    void graft_bt_from(int from);
     void graft_bt_sighandler(int sig, siginfo_t *info, void *ucontext);
 #ifdef __cplusplus
 }

@@ -27,6 +27,11 @@ typedef struct {
 
 void graft_bt()
 {
+    graft_bt_from(1);
+}
+
+void graft_bt_from(int from)
+{
     void *trace[TRACE_SIZE_MAX];
     char **messages = (char **) NULL;
     int i, trace_size = 0;
@@ -34,7 +39,7 @@ void graft_bt()
     trace_size = backtrace(trace, TRACE_SIZE_MAX);
 
     messages = backtrace_symbols(trace, trace_size);
-    for (i = 1; i < trace_size && messages; ++i)
+    for (i = from; i < trace_size && messages; ++i)
         fprintf(stderr, "\t#%d %s\n", i, messages[i]);
 
     free(messages);

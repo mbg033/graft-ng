@@ -36,10 +36,76 @@ void addGlobalCtxCleaner(graft::Manager& manager, int ms)
                 );
 }
 
+void c()
+{
+    throw std::runtime_error("my ex error");
+}
+
+void b()
+{
+    try
+    {
+        c();
+    }
+    catch(std::exception& ex)
+    {
+        std::cerr << "\nI can catch this:" << ex.what() << "\n";
+    }
+    c();
+}
+
+//pay attention to noexcept
+void main_x(int argc, const char** argv) noexcept
+{
+    b();
+}
+
+std::terminate_handler prev_terminate = nullptr;
+
+void my_terminate()
+{
+    std::cerr << "\nTerminate called, dump stack:\n";
+    graft_bt_from(9);
+    std::cerr << "\nWhole stack:\n";
+    graft_bt();
+//maybe this is not required
+    std::exception_ptr eptr = std::current_exception();
+    if(eptr)
+    {
+        try
+        {
+             std::rethrow_exception(eptr);
+        }
+        catch(std::exception& ex)
+        {
+            std::cerr << "\nmy rethrown exception:'" << ex.what() << "'\n";
+        }
+        catch(...)
+        {
+            std::cerr << "\nmy rethrown unknown exception: ";
+        }
+    }
+//because prev_terminate can do similar for us
+    prev_terminate();
+}
+
 int main(int argc, const char** argv)
 {
-    struct sigaction sa;
+    try
+    {
+        //even like this
+        //prev_terminate = std::set_terminate([]() { my_terminate(); });
 
+        prev_terminate = std::set_terminate( my_terminate );
+        main_x(argc, argv);
+    }
+    catch(std::exception& ex)
+    {
+        std::cout << "\n never called my exception: " << ex.what();
+    }
+    return -1;
+
+    struct sigaction sa;
     sigemptyset(&sa.sa_mask);
 
     sa.sa_sigaction = graft_bt_sighandler;
