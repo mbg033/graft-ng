@@ -108,7 +108,7 @@ void Looper::serve()
     {
         mg_mgr_poll(m_mgr.get(), m_copts.timer_poll_interval_ms);
         getTimerList().eval();
-        if(stopped()) break;
+        if (m_stop || m_restart) break;
     }
 }
 
@@ -116,6 +116,12 @@ void Looper::stop()
 {
     assert(!m_stop);
     m_stop = true;
+}
+
+void Looper::restart()
+{
+    assert(!m_restart);
+    m_restart = true;
 }
 
 void Looper::notifyJobReady()

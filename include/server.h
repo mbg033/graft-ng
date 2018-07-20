@@ -7,10 +7,10 @@ namespace graft {
 class GraftServer
 {
 public:
-    bool init(int argc, const char** argv);
-    void serve();
+    bool init(const ConfigOpts& opts);
+    bool serve();
 protected:
-    virtual bool initConfigOption(int argc, const char** argv);
+    virtual bool initConfigOption(const std::string& config_filename);
     virtual void intiConnectionManagers();
 private:
     void initSignals();

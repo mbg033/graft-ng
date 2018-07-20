@@ -73,6 +73,7 @@ public:
     void notifyJobReady() override;
 
     void stop();
+    void restart();
     bool ready() const { return m_ready; }
     bool stopped() const { return m_stop; }
 
@@ -85,6 +86,7 @@ private:
 
     std::atomic_bool m_ready {false};
     std::atomic_bool m_stop {false};
+    std::atomic_bool m_restart {false};
 };
 
 class ConnectionManager

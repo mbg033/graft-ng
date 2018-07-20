@@ -14,20 +14,55 @@ using namespace std;
 
 int main(int argc, const char** argv)
 {
+    graft::ConfigOpts opts;
+
+    po::options_description desc("Allowed options");
+    desc.add_options()
+            ("help", "produce help message")
+            ("config-file", po::value<string>(), "config filename (config.ini by default)")
+            ("log-level", po::value<int>(), "log-level. (3 by default)");
+
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+
+    if (vm.count("help"))
+    {
+        std::cout << desc << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    opts.config_filename = "./config.ini";
+    if (vm.count("config-file"))
+        opts.config_filename = vm["config-file"].as<string>();
+
+    opts.log_level = 1;
+    if (vm.count("log-level"))
+        opts.log_level = vm["log-level"].as<int>();
+
+    graft::GraftServer gserver;
+
     try
     {
-        graft::GraftServer gserver;
-        bool res = gserver.init(argc, argv);
-        if(!res) return -1;
-        gserver.serve();
-    } catch (const std::exception & e) {
+        bool serve = true;
+        while (serve)
+        {
+            bool res = gserver.init(opts);
+            if(!res) return EXIT_FAILURE;
+
+            serve = gserver.serve();
+        }
+    }
+    catch (const std::exception & e)
+    {
         std::cerr << "Exception thrown: " << e.what() << std::endl;
         return -1;
     }
-    catch(...) {
+    catch(...)
+    {
         std::cerr << "Exception of unknown type!\n";
-        return -1;
+        return EXIT_FAILURE;
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }

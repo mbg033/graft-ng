@@ -87,9 +87,10 @@ struct ConfigOpts
     int worker_queue_len;
     std::string cryptonode_rpc_address;
     int timer_poll_interval_ms;
-    // data directory - where
     std::string data_dir;
     int lru_timeout_ms;
+    int log_level;
+    std::string config_filename;
 };
 
 class BaseTask : public SelfHolder<BaseTask>
