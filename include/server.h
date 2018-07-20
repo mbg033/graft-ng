@@ -11,7 +11,7 @@ public:
     bool serve();
 protected:
     virtual bool initConfigOption(const std::string& config_filename);
-    virtual void intiConnectionManagers();
+    virtual void initConnectionManagers();
 private:
     void initSignals();
     void initLog(int log_level);

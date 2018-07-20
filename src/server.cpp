@@ -73,7 +73,7 @@ bool GraftServer::init(const ConfigOpts& opts)
 
     addGlobalCtxCleaner();
 
-    intiConnectionManagers();
+    initConnectionManagers();
 
 
     for(auto& cm : m_conManagers)
@@ -102,7 +102,7 @@ bool GraftServer::serve()
     };
 
     m_looper->serve();
-    bool ret = m_looper->stopped();
+    bool ret = m_looper->restarted();
 
     stop_handler = nullptr;
     restart_handler = nullptr;
@@ -182,7 +182,7 @@ bool GraftServer::initConfigOption(const std::string& config_filename)
     return true;
 }
 
-void GraftServer::intiConnectionManagers()
+void GraftServer::initConnectionManagers()
 {
     auto httpcm = std::make_unique<graft::HttpConnectionManager>();
     setHttpRouters(*httpcm);

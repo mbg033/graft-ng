@@ -76,6 +76,7 @@ public:
     void restart();
     bool ready() const { return m_ready; }
     bool stopped() const { return m_stop; }
+    bool restarted() const { return m_restart; }
 
     virtual mg_mgr* getMgMgr() override { return m_mgr.get(); }
 protected:
