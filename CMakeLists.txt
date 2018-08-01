@@ -186,7 +186,8 @@ set_target_properties(graft_server PROPERTIES LINK_FLAGS "-rdynamic")
 
 add_dependencies(graft_server libr3 cryptonode)
 
-add_subdirectory(graftlets)
+set(GRAFTLETS_OUTPUT_DIR ${PROJECT_BINARY_DIR}/graftlets)
+add_subdirectory(graftlets ${PROJECT_BINARY_DIR}/BUILD/graftlets)
 
 ##################
 ### tests section
