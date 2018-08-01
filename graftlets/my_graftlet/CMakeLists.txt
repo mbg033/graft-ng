@@ -1,43 +1,35 @@
 cmake_minimum_required(VERSION 3.10)
 
-if(NOT ("${GRAFTLETS_OUTPUT_DIR}" EQUAL ""))
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${GRAFTLETS_OUTPUT_DIR}")
-#    set_target_properties(my_graftlet PROPERTIES
-#        LIBRARY_OUTPUT_DIRECTORY "${GRAFTLETS_OUTPUT_DIR}"
-#        )
-endif(NOT ("${GRAFTLETS_OUTPUT_DIR}" EQUAL ""))
-
-#message( "include_directories ${CMAKE_CURRENT_SOURCE_DIR}/common")
-
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}/common")
-
-add_subdirectory(my_graftlet)
-
-#cmake_policy(SET CMP0048 NEW)
-#project(my_graftlet VERSION 1.1)
+project(my_graftlet VERSION 3.2)
 #project(my_graftlet)
 #set (my_VERSION_MAJOR 1)
 #set (my_VERSION_MINOR 1)
 
+#message("find path is ${PROJECT_SOURCE_DIR}/../common/CMakeGraftletConfig.h.in")
+
+configure_file(
+    "${PROJECT_SOURCE_DIR}/../common/CMakeGraftletConfig.h.in"
+    "${PROJECT_BINARY_DIR}/CMakeGraftletConfig.h"
+    )
+
+
 #set(RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin")
 #set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin")
 
-#add_library(my_graftlet SHARED plugin.cpp)
+add_library(my_graftlet SHARED plugin.cpp)
 
-#option(OPT_BUILD_TESTS "Build tests." OFF)
-
-#configure_file(
-#    "${PROJECT_SOURCE_DIR}/CMakePluginConfig.h.in"
-#    "${PROJECT_BINARY_DIR}/CMakePluginConfig.h"
-#    )
+target_include_directories(my_graftlet PRIVATE ${PROJECT_BINARY_DIR})
 
 #find_package(Threads REQUIRED)
+
 
 #if(NOT ("${GRAFTLETS_OUTPUT_DIR}" EQUAL ""))
 #    set_target_properties(my_graftlet PROPERTIES
 #        LIBRARY_OUTPUT_DIRECTORY "${GRAFTLETS_OUTPUT_DIR}"
 #        )
 #endif(NOT ("${GRAFTLETS_OUTPUT_DIR}" EQUAL ""))
+
+
 
 #set_target_properties(my_graftlet PROPERTIES
 ##    LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin"
@@ -52,7 +44,7 @@ add_subdirectory(my_graftlet)
 
 #message("CMAKE_RUNTIME_OUTPUT_DIRECTORY is ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
-#set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 14)
 
 #set_target_properties(my_graftlet PROPERTIES VERSION ${PROJECT_VERSION})
 
@@ -70,8 +62,6 @@ add_subdirectory(my_graftlet)
 
 #include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
-
-#target_include_directories(my_graftlet PRIVATE ${PROJECT_BINARY_DIR})
 
 #target_include_directories(my_graftlet PRIVATE )
 

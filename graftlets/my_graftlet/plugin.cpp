@@ -1,5 +1,7 @@
+#include "graftlet.h"
+
 #include <iostream>
-#include "CMakePluginConfig.h"
+//#include "CMakeGraftletConfig.h"
 //#include <boost/config.hpp> // for BOOST_SYMBOL_EXPORT
 #include <boost/dll.hpp>
 #include <boost/dll/alias.hpp> // for BOOST_DLL_ALIAS
