@@ -956,15 +956,15 @@ TEST_F(GraftServerTestBase, clientTimeout)
     server.stop_and_wait_for();
 }
 
-TEST_F(GraftServerTestBase, Answer)
-{//last status None(1)Forward(2){answer}Answer(3)Forward(4)Answer(5)->Ok
+TEST_F(GraftServerTestBase, Again)
+{//last status None(1)Forward(2){answer}Again(3)Forward(4)Again(5)->Ok
     int step = 0;
     const std::string client_query = "this is client query on None";
-    const std::string answer = "this is answer on Answer";
+    const std::string answer = "this is answer on Again";
     auto action = [&](const graft::Router::vars_t& vars, const graft::Input& input, graft::Context& ctx, graft::Output& output)->graft::Status
     {
         const std::string forward = "forward to cryptonode";
-        const std::string nowhere_answer = "this is answer on Answer, but nobody will see";
+        const std::string nowhere_answer = "this is answer on Again, but nobody will see";
         ++step;
         switch(ctx.local.getLastStatus())
         {
@@ -982,15 +982,15 @@ TEST_F(GraftServerTestBase, Answer)
             if(step==2)
             {
                 output.body = answer;
-                return graft::Status::Answer;
+                return graft::Status::Again;
             }
             else
             {
                 output.body = nowhere_answer;
-                return graft::Status::Answer;
+                return graft::Status::Again;
             }
         } break;
-        case graft::Status::Answer :
+        case graft::Status::Again :
         {
             assert(step == 3 || step == 5);
             if(step==3)
@@ -1013,11 +1013,11 @@ TEST_F(GraftServerTestBase, Answer)
     crypton.on_http = crypton.http_echo;
     crypton.run();
     MainServer server;
-    server.router.addRoute("/Answer", METHOD_POST, {nullptr, action, nullptr});
+    server.router.addRoute("/Again", METHOD_POST, {nullptr, action, nullptr});
     server.run();
 
     Client client;
-    client.serve("http://127.0.0.1:9084/Answer", "", client_query, 200);
+    client.serve("http://127.0.0.1:9084/Again", "", client_query, 200);
 
     EXPECT_EQ(false, client.get_closed());
     EXPECT_EQ(200, client.get_resp_code());

@@ -90,7 +90,7 @@ enum State : int
     POST_ACTION,
     ERROR,
     FORWARD,
-    ANSWER,
+    AGAIN,
     EXIT,
 };
 
@@ -117,13 +117,13 @@ std::tuple<State, bool> nextState(BaseTaskPtr bt, State prev_state)
         case DONE : return std::make_tuple(PRE_ACTION, true); //timer //assert(false);
         }
     } break;
-    case Status::Answer:
+    case Status::Again:
     {
         switch(prev_state)
         {
-        case PRE_ACTION : return std::make_tuple(State(ANSWER | (PRE_ACTION << 8)), true);
-        case WORKER_ACTION : return std::make_tuple(State(ANSWER | (WORKER_ACTION << 8)), true);
-        case POST_ACTION : return std::make_tuple(State(ANSWER | (POST_ACTION << 8)), false);
+        case PRE_ACTION : return std::make_tuple(State(AGAIN | (PRE_ACTION << 8)), true);
+        case WORKER_ACTION : return std::make_tuple(State(AGAIN | (WORKER_ACTION << 8)), true);
+        case POST_ACTION : return std::make_tuple(State(AGAIN | (POST_ACTION << 8)), false);
         case ERROR : //return std::make_tuple(DONE, false);
         case FORWARD : //return std::make_tuple(PRE_ACTION, true);
         case DONE : assert(false);
@@ -174,15 +174,15 @@ State nextState(BaseTaskPtr bt, State prev_state)
             case Status::None: assert(false);
             case Status::Ok: return WORKER_ACTION;
             case Status::Forward: return WORKER_ACTION;
-            case Status::Answer: return State(ANSWER | (PRE_ACTION << 8));
-            default: return State(ANSWER | (EXIT << 8));
+            case Status::Again: return State(AGAIN | (PRE_ACTION << 8));
+            default: return State(AGAIN | (EXIT << 8));
 /*
-            case Status::Error: return State(ANSWER | (EXIT << 8));
-            case Status::Drop: return State(ANSWER | (EXIT << 8));
-            case Status::Busy: return State(ANSWER | (EXIT << 8));
-            case Status::InternalError: return State(ANSWER | (EXIT << 8));
-            case Status::Postpone: return State(ANSWER | (EXIT << 8));
-            case Status::Stop: return State(ANSWER | (EXIT << 8));
+            case Status::Error: return State(AGAIN | (EXIT << 8));
+            case Status::Drop: return State(AGAIN | (EXIT << 8));
+            case Status::Busy: return State(AGAIN | (EXIT << 8));
+            case Status::InternalError: return State(AGAIN | (EXIT << 8));
+            case Status::Postpone: return State(AGAIN | (EXIT << 8));
+            case Status::Stop: return State(AGAIN | (EXIT << 8));
 */
             }
         }
@@ -197,7 +197,7 @@ State nextState(BaseTaskPtr bt, State prev_state)
     {
         switch(bt->getLastStatus())
         {
-        case Status::Answer: return State(ANSWER | (WORKER_ACTION << 8));
+        case Status::Again: return State(AGAIN | (WORKER_ACTION << 8));
         default: return POST_ACTION;
         }
     }
@@ -205,8 +205,8 @@ State nextState(BaseTaskPtr bt, State prev_state)
     {
         switch(bt->getLastStatus())
         {
-        case Status::Answer: return State(ANSWER | (POST_ACTION << 8));
-        default: return State(ANSWER | (EXIT << 8));
+        case Status::Again: return State(AGAIN | (POST_ACTION << 8));
+        default: return State(AGAIN | (EXIT << 8));
         }
     }
     default: assert(false);
@@ -297,9 +297,9 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
         {
             LOG_PRINT_RQS_BT(2,bt,"worker_action completed with result " << bt->getStrStatus());
 
-            if(Status::Answer == bt->getLastStatus())
+            if(Status::Again == bt->getLastStatus())
             {
-                use_state = State(ANSWER | (WORKER_ACTION << 8));
+                use_state = State(AGAIN | (WORKER_ACTION << 8));
                 break;
             }
         } break;
@@ -329,7 +329,7 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
                 LOG_PRINT_RQS_BT(3,bt,"post_action completed with result " << bt->getStrStatus());
             }
         } break;
-        case ANSWER:
+        case AGAIN:
         {
             processResult(bt);
         } break;
@@ -444,7 +444,7 @@ void TaskManager::processResult(BaseTaskPtr bt)
         LOG_PRINT_RQS_BT(3,bt,"Sending request to CryptoNode");
         sendUpstream(bt);
     } break;
-    case Status::Answer:
+    case Status::Again:
     {
         respondAndDie(bt, bt->getOutput().data(), true);
     } break;
