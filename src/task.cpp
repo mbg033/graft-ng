@@ -80,43 +80,271 @@ void TaskManager::schedule(PeriodicTask* pt)
     m_timerList.push(pt->getTimeout(), pt->getSelf());
 }
 
+enum State : int
+{
+    DONE = 1,
+    EXECUTE,
+    PRE_ACTION,
+    WORKER_ACTION,
+    WORKER_ACTION_DONE,
+    POST_ACTION,
+    ERROR,
+    FORWARD,
+    AGAIN,
+};
+
+std::tuple<State, bool> nextState(BaseTaskPtr bt, State prev_state)
+{
+//    static bool copy_output = false;
+    switch(bt->getLastStatus())
+    {
+    case Status::None:
+    {
+        assert(prev_state == DONE);
+        return std::make_tuple(PRE_ACTION, false);
+    } break;
+    case Status::Ok:
+    {
+        switch(prev_state)
+        {
+        case PRE_ACTION : return std::make_tuple(WORKER_ACTION, true);
+        case WORKER_ACTION : return std::make_tuple(POST_ACTION, true);
+        case POST_ACTION : return std::make_tuple(DONE, false);
+        case ERROR : assert(false); //return std::make_tuple(DONE, false);
+        case FORWARD : return std::make_tuple(PRE_ACTION, true);
+        case DONE : return std::make_tuple(PRE_ACTION, true); //timer //assert(false);
+        }
+    } break;
+    case Status::Again:
+    {
+        switch(prev_state)
+        {
+        case PRE_ACTION : return std::make_tuple(State(AGAIN | (PRE_ACTION << 8)), true);
+        case WORKER_ACTION : return std::make_tuple(State(AGAIN | (WORKER_ACTION << 8)), true);
+        case POST_ACTION : return std::make_tuple(State(AGAIN | (POST_ACTION << 8)), false);
+        case ERROR : //return std::make_tuple(DONE, false);
+        case FORWARD : //return std::make_tuple(PRE_ACTION, true);
+        case DONE : assert(false);
+        }
+    } break;
+    case Status::Error:
+    {
+        switch(prev_state)
+        {
+//        case DONE : assert(false);
+        case PRE_ACTION : return std::make_tuple(ERROR, false);
+        case WORKER_ACTION : return std::make_tuple(ERROR, false);
+        case POST_ACTION : return std::make_tuple(ERROR, false);
+        case ERROR : //return std::make_tuple(DONE, false);
+        case FORWARD : return std::make_tuple(ERROR, true);
+        case DONE : assert(false);
+        }
+    } break;
+    case Status::Forward:
+    {
+        switch(prev_state)
+        {
+//        case DONE : assert(false);
+        case PRE_ACTION : return std::make_tuple(FORWARD, true);
+        case WORKER_ACTION : return std::make_tuple(FORWARD, true);
+        case POST_ACTION : return std::make_tuple(FORWARD, true);
+        case ERROR : assert(false); ///: return std::make_tuple(PRE_ACTION, false);
+        case FORWARD : return std::make_tuple(PRE_ACTION, false); //assert(false);
+        case DONE : assert(false);
+        }
+    } break;
+    default: assert(false);
+    }
+}
+
+void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_state)
+{
+    auto& params = bt->getParams();
+    //if(!params.h3.pre_action) return;
+    auto& ctx = bt->getCtx();
+    auto& output = bt->getOutput();
+
+    State use_state = State(initial_use_state);
+    State state = initial_state? State(initial_state) : DONE;
+    while(true)
+    {
+        bool copy_output;
+        if(use_state)
+        {
+            state = use_state;
+            use_state = State(0);
+        }
+        else
+        {
+            State prev_state = state;
+            state = State(state >> 8);
+            if(state == 0)
+                std::tie(state, copy_output) = nextState(bt, prev_state);
+        }
+
+        switch(state & 0xFF)
+        {
+/*
+        case AGAIN:
+        {
+            respondAndDie(bt, bt->getOutput().data());
+        } break;
+*/
+        case EXECUTE:
+        {
+            assert(m_cntJobDone <= m_cntJobSent);
+            if(m_cntJobSent - m_cntJobDone == m_threadPoolInputSize)
+            {//check overflow
+                bt->getCtx().local.setError("Service Unavailable", Status::Busy);
+                respondAndDie(bt,"Thread pool overflow");
+                return;
+            }
+            assert(m_cntJobSent - m_cntJobDone < m_threadPoolInputSize);
+
+            use_state = PRE_ACTION;
+        } break;
+        case PRE_ACTION:
+        {
+            if(params.h3.pre_action)
+            {
+                try
+                {
+                    Status status = params.h3.pre_action(params.vars, params.input, ctx, output);
+                    bt->setLastStatus(status);
+                    if(Status::Ok == status && (params.h3.worker_action || params.h3.post_action)
+                            || Status::Forward == status)
+                    {
+                        params.input.assign(output);
+                    }
+                }
+                catch(const std::exception& e)
+                {
+                    bt->setError(e.what());
+                    params.input.reset();
+                }
+                catch(...)
+                {
+                    bt->setError("unknown exception");
+                    params.input.reset();
+                }
+                LOG_PRINT_RQS_BT(3,bt,"pre_action completed with result " << bt->getStrStatus());
+            }
+
+            use_state = WORKER_ACTION;
+            if(params.h3.pre_action && Status::Ok != bt->getLastStatus() && Status::Forward != bt->getLastStatus())
+            {
+                processResult(bt);
+                if(Status::Again == bt->getLastStatus())
+                    Execute(bt);
+                return;
+            }
+/*
+            use_state = WORKER_ACTION;
+            if(params.h3.pre_action && Status::Ok != bt->getLastStatus() && Status::Forward != bt->getLastStatus())
+            {
+                processResult(bt);
+                if(Status::Again == bt->getLastStatus())
+//                    Execute(bt);
+                    use_state = PRE_ACTION;
+                return;
+            }
+*/
+        } break;
+        case WORKER_ACTION:
+        {
+            if(params.h3.worker_action)
+            {
+                ++m_cntJobSent;
+                m_threadPool->post(
+                            GJPtr( bt, m_resQueue.get(), this ),
+                            true
+                            );
+                return;
+            }
+            else
+            {
+                //special case when worker_action is absent
+                use_state = POST_ACTION;
+            }
+        } break;
+        case WORKER_ACTION_DONE:
+        {
+            LOG_PRINT_RQS_BT(2,bt,"worker_action completed with result " << bt->getStrStatus());
+
+            if(Status::Again == bt->getLastStatus())
+            {
+                processResult(bt);
+                Execute(bt);
+                return;
+            }
+            use_state = POST_ACTION;
+        } break;
+        case POST_ACTION:
+        {
+            if(params.h3.post_action)
+            {
+                try
+                {
+                    Status status = params.h3.post_action(params.vars, params.input, ctx, output);
+                    bt->setLastStatus(status);
+                    if(Status::Forward == status)
+                    {
+                        params.input.assign(output);
+                    }
+                }
+                catch(const std::exception& e)
+                {
+                    bt->setError(e.what());
+                    params.input.reset();
+                }
+                catch(...)
+                {
+                    bt->setError("unknown exception");
+                    params.input.reset();
+                }
+                LOG_PRINT_RQS_BT(3,bt,"post_action completed with result " << bt->getStrStatus());
+            }
+
+            processResult(bt);
+            if(Status::Again == bt->getLastStatus())
+            {
+                Execute(bt);
+//                use_state = PRE_ACTION;
+                break;
+            }
+            return;
+        } break;
+/*
+        case ERROR:
+        {
+            respondAndDie(bt, bt->getOutput().data());
+            bt->finalize();
+            return;
+        } break;
+//        case THREAD_POOL:
+        case DONE:
+        {
+            respondAndDie(bt, bt->getOutput().data());
+            bt->finalize();
+            return;
+        } break;
+*/
+/*
+        case FORWARD:
+        {
+            LOG_PRINT_RQS_BT(3,bt,"Sending request to CryptoNode");
+            sendUpstream(bt);
+            return;
+        } break;
+*/
+        default: assert(false);
+        }
+    }
+}
+
 void TaskManager::Execute(BaseTaskPtr bt)
 {
-    assert(m_cntJobDone <= m_cntJobSent);
-    if(m_cntJobSent - m_cntJobDone == m_threadPoolInputSize)
-    {//check overflow
-        bt->getCtx().local.setError("Service Unavailable", Status::Busy);
-        respondAndDie(bt,"Thread pool overflow");
-        return;
-    }
-    assert(m_cntJobSent - m_cntJobDone < m_threadPoolInputSize);
-
-    auto& params = bt->getParams();
-
-    ExecutePreAction(bt);
-    if(params.h3.pre_action && Status::Ok != bt->getLastStatus())
-    {
-        processResult(bt);
-        if(Status::Again == bt->getLastStatus())
-            Execute(bt);
-        return;
-    }
-    if(params.h3.worker_action)
-    {
-        ++m_cntJobSent;
-        m_threadPool->post(
-                    GJPtr( bt, m_resQueue.get(), this ),
-                    true
-                    );
-    }
-    else
-    {
-        //special case when worker_action is absent
-        ExecutePostAction(bt, nullptr);
-        processResult(bt);
-        if(Status::Again == bt->getLastStatus())
-            Execute(bt);
-    }
+    dispatch(bt, 0, EXECUTE);
 }
 
 bool TaskManager::canStop()
@@ -133,85 +361,10 @@ bool TaskManager::tryProcessReadyJob()
     if(!res) return res;
     ++m_cntJobDone;
     BaseTaskPtr bt = gj->getTask();
-    if(Status::Again == bt->getLastStatus())
-    {
-        processResult(bt);
-        Execute(bt);
-        return true;
-    }
-    ExecutePostAction(bt, &*gj);
-    processResult(bt);
-    if(Status::Again == bt->getLastStatus())
-    {
-        Execute(bt);
-    }
+
+    dispatch(bt, 0, WORKER_ACTION_DONE);
+
     return true;
-}
-
-void TaskManager::ExecutePreAction(BaseTaskPtr bt)
-{
-    auto& params = bt->getParams();
-    if(!params.h3.pre_action) return;
-    auto& ctx = bt->getCtx();
-    auto& output = bt->getOutput();
-
-    try
-    {
-        Status status = params.h3.pre_action(params.vars, params.input, ctx, output);
-        bt->setLastStatus(status);
-        if(Status::Ok == status && (params.h3.worker_action || params.h3.post_action)
-                || Status::Forward == status)
-        {
-            params.input.assign(output);
-        }
-    }
-    catch(const std::exception& e)
-    {
-        bt->setError(e.what());
-        params.input.reset();
-    }
-    catch(...)
-    {
-        bt->setError("unknown exception");
-        params.input.reset();
-    }
-    LOG_PRINT_RQS_BT(3,bt,"pre_action completed with result " << bt->getStrStatus());
-}
-
-void TaskManager::ExecutePostAction(BaseTaskPtr bt, GJ* gj)
-{
-    if(gj)
-    {
-        LOG_PRINT_RQS_BT(2,bt,"worker_action completed with result " << bt->getStrStatus());
-    }
-    //post_action if not empty, will be called in any case, even if worker_action results as some kind of error or exception.
-    //But, in case pre_action finishes as error both worker_action and post_action will be skipped.
-    //post_action has a chance to fix result of pre_action. In case of error was before it it should just return that error.
-    auto& params = bt->getParams();
-    if(!params.h3.post_action) return;
-    auto& ctx = bt->getCtx();
-    auto& output = bt->getOutput();
-
-    try
-    {
-        Status status = params.h3.post_action(params.vars, params.input, ctx, output);
-        bt->setLastStatus(status);
-        if(Status::Forward == status)
-        {
-            params.input.assign(output);
-        }
-    }
-    catch(const std::exception& e)
-    {
-        bt->setError(e.what());
-        params.input.reset();
-    }
-    catch(...)
-    {
-        bt->setError("unknown exception");
-        params.input.reset();
-    }
-    LOG_PRINT_RQS_BT(3,bt,"post_action completed with result " << bt->getStrStatus());
 }
 
 void TaskManager::postponeTask(BaseTaskPtr bt)
@@ -432,9 +585,11 @@ void TaskManager::onUpstreamDone(UpstreamSender& uss)
     {//now always create a job and put it to the thread pool after CryptoNode
         LOG_PRINT_RQS_BT(2,bt, "CryptoNode answered ");
         if(!bt->getSelf()) return; //it is possible that a client has closed connection already
+//        dispatch(bt, FORWARD, PRE_ACTION);
         Execute(bt);
+        ++m_cntUpstreamSenderDone;
     }
-    ++m_cntUpstreamSenderDone;
+//    ++m_cntUpstreamSenderDone;
     //uss will be destroyed on exit
 }
 

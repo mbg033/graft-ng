@@ -240,8 +240,6 @@ protected:
 
     ConfigOpts m_copts;
 private:
-    void ExecutePreAction(BaseTaskPtr bt);
-    void ExecutePostAction(BaseTaskPtr bt, GJ* gj = nullptr);  //gj equals nullptr if threadPool was skipped for some reasons
     void Execute(BaseTaskPtr bt);
     void processResult(BaseTaskPtr bt);
     void respondAndDie(BaseTaskPtr bt, const std::string& s, bool keep_alive = false);
@@ -249,6 +247,8 @@ private:
 
     void initThreadPool(int threadCount = std::thread::hardware_concurrency(), int workersQueueSize = 32);
     bool tryProcessReadyJob();
+
+    void dispatch(BaseTaskPtr bt, int initial_state = 0, int initial_use_state = 0);
 
     GlobalContextMap m_gcm;
 
