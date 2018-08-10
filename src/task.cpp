@@ -191,7 +191,9 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
             {//check overflow
                 bt->getCtx().local.setError("Service Unavailable", Status::Busy);
                 respondAndDie(bt,"Thread pool overflow");
-                return;
+
+                use_state = EXIT;
+                break;
             }
             assert(m_cntJobSent - m_cntJobDone < m_threadPoolInputSize);
 
@@ -225,22 +227,28 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
 
             }
 
-            use_state = WORKER_ACTION;
-
-            if(params.h3.pre_action && Status::Ok != bt->getLastStatus() && Status::Forward != bt->getLastStatus())
+            if(params.h3.pre_action)
             {
-                if(Status::Answer == bt->getLastStatus())
+                switch(bt->getLastStatus())
                 {
-                    use_state = State(ANSWER | (PRE_ACTION << 8));
-                    break;
+                case Status::None: assert(false);
+                case Status::Ok: use_state = WORKER_ACTION; break;
+                case Status::Forward: use_state = WORKER_ACTION; break;
+                case Status::Answer: use_state = State(ANSWER | (PRE_ACTION << 8)); break;
+                default: use_state = State(ANSWER | (EXIT << 8)); break;
+/*
+                case Status::Error: use_state = State(ANSWER | (EXIT << 8)); break;
+                case Status::Drop: use_state = State(ANSWER | (EXIT << 8)); break;
+                case Status::Busy: use_state = State(ANSWER | (EXIT << 8)); break;
+                case Status::InternalError: use_state = State(ANSWER | (EXIT << 8)); break;
+                case Status::Postpone: use_state = State(ANSWER | (EXIT << 8)); break;
+                case Status::Stop: use_state = State(ANSWER | (EXIT << 8)); break;
+//                default: use_state = WORKER_ACTION;
+*/
                 }
-                else
-                {
-                    processResult(bt);
-//                    use_state = State(ANSWER | (EXIT << 8));
-                }
-                return;
             }
+            else use_state = WORKER_ACTION;
+
         } break;
         case WORKER_ACTION:
         {
@@ -251,13 +259,11 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
                             GJPtr( bt, m_resQueue.get(), this ),
                             true
                             );
-                return;
             }
-            else
-            {
-                //special case when worker_action is absent
-                use_state = POST_ACTION;
-            }
+
+            if(params.h3.worker_action) use_state = EXIT;
+            else use_state = POST_ACTION;
+
         } break;
         case WORKER_ACTION_DONE:
         {
@@ -294,15 +300,10 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
                 }
                 LOG_PRINT_RQS_BT(3,bt,"post_action completed with result " << bt->getStrStatus());
             }
-            if(Status::Answer == bt->getLastStatus())
-            {
-                use_state = State(ANSWER | (POST_ACTION << 8));
-                break;
-            }
-            else
-            {
-                use_state = State(ANSWER | (EXIT << 8));
-            }
+
+            if(Status::Answer == bt->getLastStatus()) use_state = State(ANSWER | (POST_ACTION << 8));
+            else use_state = State(ANSWER | (EXIT << 8));
+
         } break;
         case ANSWER:
         {
