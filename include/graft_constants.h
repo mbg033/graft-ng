@@ -7,7 +7,7 @@ namespace graft
     EXP(None) \
     EXP(Ok) \
     EXP(Forward) \
-    EXP(Again) \
+    EXP(Answer) \
     EXP(Error) \
     EXP(Drop) \
     EXP(Busy) \
