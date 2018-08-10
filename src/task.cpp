@@ -94,6 +94,7 @@ enum State : int
     EXIT,
 };
 
+/*
 std::tuple<State, bool> nextState(BaseTaskPtr bt, State prev_state)
 {
 //    static bool copy_output = false;
@@ -157,6 +158,62 @@ std::tuple<State, bool> nextState(BaseTaskPtr bt, State prev_state)
     default: assert(false);
     }
 }
+*/
+
+State nextState(BaseTaskPtr bt, State prev_state)
+{
+    switch(prev_state)
+    {
+    case EXECUTE: return PRE_ACTION;
+    case PRE_ACTION:
+    {
+        if(bt->getParams().h3.pre_action)
+        {
+            switch(bt->getLastStatus())
+            {
+            case Status::None: assert(false);
+            case Status::Ok: return WORKER_ACTION;
+            case Status::Forward: return WORKER_ACTION;
+            case Status::Answer: return State(ANSWER | (PRE_ACTION << 8));
+            default: return State(ANSWER | (EXIT << 8));
+/*
+            case Status::Error: return State(ANSWER | (EXIT << 8));
+            case Status::Drop: return State(ANSWER | (EXIT << 8));
+            case Status::Busy: return State(ANSWER | (EXIT << 8));
+            case Status::InternalError: return State(ANSWER | (EXIT << 8));
+            case Status::Postpone: return State(ANSWER | (EXIT << 8));
+            case Status::Stop: return State(ANSWER | (EXIT << 8));
+*/
+            }
+        }
+        return WORKER_ACTION;
+    }
+    case WORKER_ACTION:
+    {
+        if(bt->getParams().h3.worker_action) return EXIT;
+        else return POST_ACTION;
+    }
+    case WORKER_ACTION_DONE:
+    {
+        switch(bt->getLastStatus())
+        {
+        case Status::Answer: return State(ANSWER | (WORKER_ACTION << 8));
+        default: return POST_ACTION;
+        }
+    }
+    case POST_ACTION:
+    {
+        switch(bt->getLastStatus())
+        {
+        case Status::Answer: return State(ANSWER | (POST_ACTION << 8));
+        default: return State(ANSWER | (EXIT << 8));
+        }
+    }
+    default: assert(false);
+    }
+
+
+}
 
 void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_state)
 {
@@ -179,7 +236,8 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
             State prev_state = state;
             state = State(state >> 8);
             if(state == 0)
-                std::tie(state, copy_output) = nextState(bt, prev_state);
+                state = nextState(bt, prev_state);
+//                std::tie(state, copy_output) = nextState(bt, prev_state);
         }
 
         switch(state & 0xFF)
@@ -196,8 +254,6 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
                 break;
             }
             assert(m_cntJobSent - m_cntJobDone < m_threadPoolInputSize);
-
-            use_state = PRE_ACTION;
         } break;
         case PRE_ACTION:
         {
@@ -224,31 +280,7 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
                     params.input.reset();
                 }
                 LOG_PRINT_RQS_BT(3,bt,"pre_action completed with result " << bt->getStrStatus());
-
             }
-
-            if(params.h3.pre_action)
-            {
-                switch(bt->getLastStatus())
-                {
-                case Status::None: assert(false);
-                case Status::Ok: use_state = WORKER_ACTION; break;
-                case Status::Forward: use_state = WORKER_ACTION; break;
-                case Status::Answer: use_state = State(ANSWER | (PRE_ACTION << 8)); break;
-                default: use_state = State(ANSWER | (EXIT << 8)); break;
-/*
-                case Status::Error: use_state = State(ANSWER | (EXIT << 8)); break;
-                case Status::Drop: use_state = State(ANSWER | (EXIT << 8)); break;
-                case Status::Busy: use_state = State(ANSWER | (EXIT << 8)); break;
-                case Status::InternalError: use_state = State(ANSWER | (EXIT << 8)); break;
-                case Status::Postpone: use_state = State(ANSWER | (EXIT << 8)); break;
-                case Status::Stop: use_state = State(ANSWER | (EXIT << 8)); break;
-//                default: use_state = WORKER_ACTION;
-*/
-                }
-            }
-            else use_state = WORKER_ACTION;
-
         } break;
         case WORKER_ACTION:
         {
@@ -260,20 +292,16 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
                             true
                             );
             }
-
-            if(params.h3.worker_action) use_state = EXIT;
-            else use_state = POST_ACTION;
-
         } break;
         case WORKER_ACTION_DONE:
         {
             LOG_PRINT_RQS_BT(2,bt,"worker_action completed with result " << bt->getStrStatus());
+
             if(Status::Answer == bt->getLastStatus())
             {
                 use_state = State(ANSWER | (WORKER_ACTION << 8));
                 break;
             }
-            use_state = POST_ACTION;
         } break;
         case POST_ACTION:
         {
@@ -300,10 +328,6 @@ void TaskManager::dispatch(BaseTaskPtr bt, int initial_state, int initial_use_st
                 }
                 LOG_PRINT_RQS_BT(3,bt,"post_action completed with result " << bt->getStrStatus());
             }
-
-            if(Status::Answer == bt->getLastStatus()) use_state = State(ANSWER | (POST_ACTION << 8));
-            else use_state = State(ANSWER | (EXIT << 8));
-
         } break;
         case ANSWER:
         {
