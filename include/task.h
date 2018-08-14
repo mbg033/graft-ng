@@ -249,6 +249,7 @@ private:
     bool tryProcessReadyJob();
 
     void dispatch(BaseTaskPtr bt, int initial_state = 0, int initial_use_state = 0);
+    void dispatch_x(BaseTaskPtr bt, int initial_state = 0);
 
     GlobalContextMap m_gcm;
 
