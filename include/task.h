@@ -197,6 +197,7 @@ public:
 
 class TaskManager
 {
+    friend class StateMachine;
 public:
     TaskManager(const ConfigOpts& copts)
         : m_copts(copts)
@@ -248,8 +249,8 @@ private:
     void initThreadPool(int threadCount = std::thread::hardware_concurrency(), int workersQueueSize = 32);
     bool tryProcessReadyJob();
 
-    void dispatch(BaseTaskPtr bt, int initial_state = 0, int initial_use_state = 0);
-    void dispatch_x(BaseTaskPtr bt, int initial_state = 0);
+    void dispatch(BaseTaskPtr bt, int initial_state);
+    void process_action(BaseTaskPtr bt, int action);
 
     GlobalContextMap m_gcm;
 

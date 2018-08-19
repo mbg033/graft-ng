@@ -4,6 +4,7 @@ namespace graft
 {
 
 #define GRAFT_STATUS_LIST(EXP) \
+    EXP(Any) \
     EXP(None) \
     EXP(Ok) \
     EXP(Forward) \
