@@ -1,13 +1,24 @@
 #include "task.h"
 #include "connection.h"
 #include "router.h"
-
 #include "state_machine.h"
 
 namespace graft {
 
 thread_local bool TaskManager::io_thread = false;
 TaskManager* TaskManager::g_upstreamManager{nullptr};
+
+TaskManager::TaskManager(const ConfigOpts& copts) : m_copts(copts)
+{
+    // TODO: validate options, throw exception if any mandatory options missing
+    initThreadPool(copts.workers_count, copts.worker_queue_len);
+    m_stateMachine = std::make_unique<StateMachine>();
+}
+
+TaskManager::~TaskManager()
+{
+
+}
 
 //pay attension, input is output and vice versa
 void TaskManager::sendUpstreamBlocking(Output& output, Input& input, std::string& err)
@@ -56,7 +67,7 @@ void TaskManager::onTimer(BaseTaskPtr bt)
     Execute(bt);
 }
 
-void TaskManager::respondAndDie(BaseTaskPtr bt, const std::string& s, bool keep_alive)
+void TaskManager::respondAndDie(BaseTaskPtr bt, const std::string& s, bool die)
 {
     ClientTask* ct = dynamic_cast<ClientTask*>(bt.get());
     if(ct)
@@ -73,7 +84,7 @@ void TaskManager::respondAndDie(BaseTaskPtr bt, const std::string& s, bool keep_
     if (it != m_postponedTasks.end())
         m_postponedTasks.erase(it);
 
-    if(!keep_alive)
+    if(die)
         bt->finalize();
 }
 
@@ -97,6 +108,7 @@ bool TaskManager::tryProcessReadyJob()
     ++m_cntJobDone;
     BaseTaskPtr bt = gj->getTask();
 
+    LOG_PRINT_RQS_BT(2,bt,"worker_action completed with result " << bt->getStrStatus());
     dispatch(bt, WORKER_ACTION_DONE);
 
     return true;
@@ -147,50 +159,24 @@ void TaskManager::executePostponedTasks()
     }
 }
 
-void TaskManager::processResult(BaseTaskPtr bt)
+void TaskManager::processForward(BaseTaskPtr bt)
 {
-    switch(bt->getLastStatus())
+    assert(Status::Forward == bt->getLastStatus());
+    LOG_PRINT_RQS_BT(3,bt,"Sending request to CryptoNode");
+    sendUpstream(bt);
+}
+
+void TaskManager::processOk(BaseTaskPtr bt)
+{
+    Context::uuid_t nextUuid = bt->getCtx().getNextTaskId();
+    if(!nextUuid.is_nil())
     {
-    case Status::Forward:
-    {
-        LOG_PRINT_RQS_BT(3,bt,"Sending request to CryptoNode");
-        sendUpstream(bt);
-    } break;
-    case Status::Again:
-    {
-        respondAndDie(bt, bt->getOutput().data(), true);
-    } break;
-    case Status::Ok:
-    {
-        Context::uuid_t nextUuid = bt->getCtx().getNextTaskId();
-        if(!nextUuid.is_nil())
-        {
-            auto it = m_postponedTasks.find(nextUuid);
-            assert(it != m_postponedTasks.end());
-            m_readyToResume.push_back(it->second);
-            m_postponedTasks.erase(it);
-        }
-        respondAndDie(bt, bt->getOutput().data());
-    } break;
-    case Status::InternalError:
-    case Status::Error:
-    case Status::Stop:
-    {
-        respondAndDie(bt, bt->getOutput().data());
-    } break;
-    case Status::Drop:
-    {
-        respondAndDie(bt, "Job done Drop."); //TODO: Expect HTTP Error Response
-    } break;
-    case Status::Postpone:
-    {
-        postponeTask(bt);
-    } break;
-    default:
-    {
-        assert(false);
-    } break;
+        auto it = m_postponedTasks.find(nextUuid);
+        assert(it != m_postponedTasks.end());
+        m_readyToResume.push_back(it->second);
+        m_postponedTasks.erase(it);
     }
+    respondAndDie(bt, bt->getOutput().data());
 }
 
 void TaskManager::addPeriodicTask(const Router::Handler3& h3, std::chrono::milliseconds interval_ms)
@@ -311,7 +297,9 @@ void TaskManager::onUpstreamDone(UpstreamSender& uss)
     {
         bt->setError(uss.getError().c_str(), uss.getStatus());
         LOG_PRINT_RQS_BT(2,bt, "CryptoNode done with error: " << uss.getError().c_str());
-        processResult(bt);
+        assert(Status::Error == bt->getLastStatus()); //Status::Error only possible value now
+        respondAndDie(bt, bt->getOutput().data());
+
         ++m_cntUpstreamSenderDone;
         return;
     }
@@ -320,11 +308,9 @@ void TaskManager::onUpstreamDone(UpstreamSender& uss)
     {//now always create a job and put it to the thread pool after CryptoNode
         LOG_PRINT_RQS_BT(2,bt, "CryptoNode answered ");
         if(!bt->getSelf()) return; //it is possible that a client has closed connection already
-//        dispatch(bt, FORWARD, PRE_ACTION);
         Execute(bt);
         ++m_cntUpstreamSenderDone;
     }
-//    ++m_cntUpstreamSenderDone;
     //uss will be destroyed on exit
 }
 
@@ -382,29 +368,6 @@ void ClientTask::finalize()
     releaseItself();
 }
 
-StateMachine::row StateMachine::table[] = {
-//   Start                   Status           Target             Guard               Action
-    {EXECUTE,                Status::Any,     PRE_ACTION,        nullptr,            action(EXECUTE) },
-    {PRE_ACTION,             Status::Busy,    EXIT,              nullptr,            action(AGAIN) },
-    {PRE_ACTION,             Status::Any,     CHK_PRE_ACTION,    nullptr,            action(PRE_ACTION) },
-    {CHK_PRE_ACTION,         Status::Again,   PRE_ACTION,        nullptr,            action(AGAIN) },
-    {CHK_PRE_ACTION,         Status::Ok,      WORKER_ACTION,     has(&H3::pre_action), nullptr },
-    {CHK_PRE_ACTION,         Status::Forward, WORKER_ACTION,     has(&H3::pre_action), nullptr },
-    {CHK_PRE_ACTION,         Status::Any,     EXIT,              has(&H3::pre_action), action(AGAIN) },
-    {CHK_PRE_ACTION,         Status::Any,     WORKER_ACTION,     nullptr,            nullptr },
-    {WORKER_ACTION,          Status::Any,     CHK_WORKER_ACTION, nullptr,            action(WORKER_ACTION) },
-    {CHK_WORKER_ACTION,      Status::Any,     EXIT,              has(&H3::worker_action), nullptr },
-    {CHK_WORKER_ACTION,      Status::Any,     POST_ACTION,       nullptr,            nullptr },
-    {WORKER_ACTION_DONE,     Status::Any, CHK_WORKER_ACTION_DONE, nullptr,           action(WORKER_ACTION_DONE) },
-    {CHK_WORKER_ACTION_DONE, Status::Again,   WORKER_ACTION,     nullptr,            action(AGAIN) },
-    {CHK_WORKER_ACTION_DONE, Status::Any,     POST_ACTION,       nullptr,            nullptr },
-    {POST_ACTION,            Status::Any,     CHK_POST_ACTION,   nullptr,            action(POST_ACTION) },
-    {CHK_POST_ACTION,        Status::Again,   POST_ACTION,       nullptr,            action(AGAIN) },
-    {CHK_POST_ACTION,        Status::Any,     EXIT,              nullptr,            action(AGAIN) },
-};
-
-int StateMachine::table_size = sizeof(table)/sizeof(table[0]);
-
 void TaskManager::schedule(PeriodicTask* pt)
 {
     m_timerList.push(pt->getTimeout(), pt->getSelf());
@@ -412,109 +375,105 @@ void TaskManager::schedule(PeriodicTask* pt)
 
 void TaskManager::dispatch(BaseTaskPtr bt, int initial_state)
 {
-    StateMachine sm{State(initial_state)};
-    while(sm.state() != EXIT)
+    m_stateMachine->state(State(initial_state));
+    while(m_stateMachine->state() != EXIT)
     {
-        sm.process(bt);
+        m_stateMachine->process(bt);
     }
 }
 
-void TaskManager::process_action(BaseTaskPtr bt, int action)
+void TaskManager::checkThreadPoolOverflow(BaseTaskPtr bt)
+{
+    auto& params = bt->getParams();
+
+    assert(m_cntJobDone <= m_cntJobSent);
+    if(params.h3.worker_action && m_cntJobSent - m_cntJobDone == m_threadPoolInputSize)
+    {//check overflow
+        bt->getCtx().local.setError("Service Unavailable", Status::Busy);
+        respondAndDie(bt,"Thread pool overflow");
+    }
+    assert(m_cntJobSent - m_cntJobDone <= m_threadPoolInputSize);
+}
+
+void TaskManager::runPreAction(BaseTaskPtr bt)
 {
     auto& params = bt->getParams();
     auto& ctx = bt->getCtx();
     auto& output = bt->getOutput();
 
-    switch(action)
+    if(params.h3.pre_action)
     {
-    case EXECUTE:
-    {
-        assert(m_cntJobDone <= m_cntJobSent);
-        if(m_cntJobSent - m_cntJobDone == m_threadPoolInputSize)
-        {//check overflow
-            bt->getCtx().local.setError("Service Unavailable", Status::Busy);
-            respondAndDie(bt,"Thread pool overflow");
+        try
+        {
+            Status status = params.h3.pre_action(params.vars, params.input, ctx, output);
+            bt->setLastStatus(status);
+            if(Status::Ok == status && (params.h3.worker_action || params.h3.post_action)
+                    || Status::Forward == status)
+            {
+                params.input.assign(output);
+            }
+        }
+        catch(const std::exception& e)
+        {
+            bt->setError(e.what());
+            params.input.reset();
+        }
+        catch(...)
+        {
+            bt->setError("unknown exception");
+            params.input.reset();
+        }
+        LOG_PRINT_RQS_BT(3,bt,"pre_action completed with result " << bt->getStrStatus());
+    }
+}
 
-        }
-        assert(m_cntJobSent - m_cntJobDone < m_threadPoolInputSize);
-    } break;
-    case PRE_ACTION:
+void TaskManager::runWorkerAction(BaseTaskPtr bt)
+{
+    auto& params = bt->getParams();
+
+    if(params.h3.worker_action)
     {
-        if(params.h3.pre_action)
+        ++m_cntJobSent;
+        m_threadPool->post(
+                    GJPtr( bt, m_resQueue.get(), this ),
+                    true
+                    );
+    }
+}
+
+void TaskManager::runPostAction(BaseTaskPtr bt)
+{
+    auto& params = bt->getParams();
+    auto& ctx = bt->getCtx();
+    auto& output = bt->getOutput();
+
+    if(params.h3.post_action)
+    {
+        try
         {
-            try
+            Status status = params.h3.post_action(params.vars, params.input, ctx, output);
+            //in case of pre_action or worker_action return Forward we call post_action in any case
+            //but we should ignore post_action result status and output
+            if(Status::Forward != bt->getLastStatus())
             {
-                Status status = params.h3.pre_action(params.vars, params.input, ctx, output);
-                bt->setLastStatus(status);
-                if(Status::Ok == status && (params.h3.worker_action || params.h3.post_action)
-                        || Status::Forward == status)
-                {
-                    params.input.assign(output);
-                }
-            }
-            catch(const std::exception& e)
-            {
-                bt->setError(e.what());
-                params.input.reset();
-            }
-            catch(...)
-            {
-                bt->setError("unknown exception");
-                params.input.reset();
-            }
-            LOG_PRINT_RQS_BT(3,bt,"pre_action completed with result " << bt->getStrStatus());
-        }
-    } break;
-    case WORKER_ACTION:
-    {
-        if(params.h3.worker_action)
-        {
-            ++m_cntJobSent;
-            m_threadPool->post(
-                        GJPtr( bt, m_resQueue.get(), this ),
-                        true
-                        );
-        }
-    } break;
-    case WORKER_ACTION_DONE:
-    {
-        LOG_PRINT_RQS_BT(2,bt,"worker_action completed with result " << bt->getStrStatus());
-    } break;
-    case POST_ACTION:
-    {
-        if(params.h3.post_action)
-        {
-            try
-            {
-                Status status = params.h3.post_action(params.vars, params.input, ctx, output);
                 bt->setLastStatus(status);
                 if(Status::Forward == status)
                 {
                     params.input.assign(output);
                 }
             }
-            catch(const std::exception& e)
-            {
-                bt->setError(e.what());
-                params.input.reset();
-            }
-            catch(...)
-            {
-                bt->setError("unknown exception");
-                params.input.reset();
-            }
-            LOG_PRINT_RQS_BT(3,bt,"post_action completed with result " << bt->getStrStatus());
         }
-    } break;
-    case AGAIN:
-    {
-        processResult(bt);
-    } break;
-    case EXIT:
-    {
-        return;
-    } break;
-    default: assert(false);
+        catch(const std::exception& e)
+        {
+            bt->setError(e.what());
+            params.input.reset();
+        }
+        catch(...)
+        {
+            bt->setError("unknown exception");
+            params.input.reset();
+        }
+        LOG_PRINT_RQS_BT(3,bt,"post_action completed with result " << bt->getStrStatus());
     }
 }
 
