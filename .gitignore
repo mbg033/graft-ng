@@ -1,3 +1,4 @@
-_out
-.ycm_extra_conf.py
-
+.gitignore
+.ycm*
+Makefile
+build
