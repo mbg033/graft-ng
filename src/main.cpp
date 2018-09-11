@@ -38,8 +38,17 @@ void terminate()
 
 } //namespace graft
 
+#ifndef ELPP_SYSLOG
+#error "ELPP_SYSLOG"
+#endif
+
 int main(int argc, const char** argv)
 {
+    {
+        ELPP_INITIALIZE_SYSLOG("graft_server", LOG_PID | LOG_CONS | LOG_PERROR, LOG_USER);
+        SYSLOG(INFO) << "This is syslog - read it from /var/log/syslog";
+    }
+
     graft::prev_terminate = std::set_terminate( graft::terminate );
 
     try
