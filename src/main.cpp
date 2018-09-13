@@ -38,17 +38,35 @@ void terminate()
 
 } //namespace graft
 
+constexpr const char*  bfile()
+{
+    return &__FILE__[sizeof(CMAKE_SOURCE_DIR)];
+}
+
+constexpr const char*  __RELFILE__ = &__FILE__[sizeof(CMAKE_SOURCE_DIR)];
+
+
 #ifndef ELPP_SYSLOG
 #error "ELPP_SYSLOG"
 #endif
 
 int main(int argc, const char** argv)
 {
+/*
+//    mlog_set_format("%datetime{%Y-%M-%d %H:%m:%s.%g} %level	%logger	%rfile	%msg");
+//    mlog_set_format(" %level	%logger	%rfile	%msg");
+    std::cout << "\tCMAKE_SOURCE_DIR=" << CMAKE_SOURCE_DIR << "\n\n";
+    std::cout << "\tBFile=" << bfile() << "\n\n";
+    std::cout << "\t__RELFILE__=" << __RELFILE__ << "\n\n";
+    std::cout << "\t__BASE_FILE__=" << __BASE_FILE__ << "\n\n";
+    std::cout << "\t__FILE__=" << __FILE__ << "\n\n";
+*/
+/*
     {
         ELPP_INITIALIZE_SYSLOG("graft_server", LOG_PID | LOG_CONS | LOG_PERROR, LOG_USER);
-        SYSLOG(INFO) << "This is syslog - read it from /var/log/syslog";
+//        SYSLOG(INFO) << "This is syslog - read it from /var/log/syslog";
     }
-
+*/
     graft::prev_terminate = std::set_terminate( graft::terminate );
 
     try

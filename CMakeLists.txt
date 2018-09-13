@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 
+message("==>> graft-ng CMAKE_SOURCE_DIR = ${CMAKE_SOURCE_DIR}")
+message("==>> graft-ng CMAKE_CURRENT_SOURCE_DIR = ${CMAKE_CURRENT_SOURCE_DIR}")
+
+if(NOT DEFINED CMAKE_ROOT_SOURCE_DIR)
+# CMAKE_ROOT_SOURCE_DIR variable is required, because CMAKE_SOURCE_DIR works well for include like commands and does not for external projects
+message("==>> Here")
+#    set(CMAKE_ROOT_SOURCE_DIR:STRING "${CMAKE_SOURCE_DIR}")
+    set(CMAKE_ROOT_SOURCE_DIR "${CMAKE_SOURCE_DIR}")
+endif()
+
+message("==>> graft-ng CMAKE_ROOT_SOURCE_DIR = ${CMAKE_ROOT_SOURCE_DIR}")
+
 project(graft_server)
 
 option(OPT_BUILD_TESTS "Build tests." OFF)
@@ -48,7 +60,7 @@ ExternalProject_Add(
     STAMP_DIR ${PROJECT_BINARY_DIR}/STAMP/cryptonode
     TMP_DIR ${PROJECT_BINARY_DIR}/TMP/cryptonode
     INSTALL_DIR ${PROJECT_BINARY_DIR}/BUILD
-    CMAKE_ARGS ${ExternalProjectCMakeArgs} -DSTATIC=ON -DHAVE_EVP_MD_CTX_NEW=YES
+    CMAKE_ARGS ${ExternalProjectCMakeArgs} -DSTATIC=ON -DHAVE_EVP_MD_CTX_NEW=YES -DCMAKE_ROOT_SOURCE_DIR:STRING="${CMAKE_SOURCE_DIR}"
     )
 
 set(CMAKE_CXX_STANDARD 14)
@@ -188,7 +200,7 @@ target_link_libraries(graft_server PRIVATE
     ${COMMON_LIBS}
     )
 
-target_compile_definitions(graft_server PRIVATE MG_ENABLE_COAP=1 -DELPP_SYSLOG)
+target_compile_definitions(graft_server PRIVATE MG_ENABLE_COAP=1 -DELPP_SYSLOG -DMONERO_DEFAULT_LOG_CATEGORY="supernode")
 
 set_target_properties(graft_server PROPERTIES LINK_FLAGS "-rdynamic")
 
@@ -246,7 +258,7 @@ if (OPT_BUILD_TESTS)
             )
 
 
-        target_compile_definitions(graft_server_test PRIVATE MG_ENABLE_COAP=1)
+        target_compile_definitions(graft_server_test PRIVATE MG_ENABLE_COAP=1 -DELPP_SYSLOG)
         add_dependencies(graft_server_test libr3 cryptonode googletest)
 
         if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/test_wallet.keys)
