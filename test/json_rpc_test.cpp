@@ -29,14 +29,14 @@
 
 #include <misc_log_ex.h>
 #include <gtest/gtest.h>
-#include <inout.h>
-#include <jsonrpc.h>
-#include <connection.h>
-#include <router.h>
-
 #include <string>
 #include <thread>
 #include <chrono>
+#include "inout.h"
+#include "jsonrpc.h"
+#include "connection.h"
+#include "router.h"
+#include "test.h"
 
 
 
@@ -160,7 +160,7 @@ struct JsonRpcTest : public ::testing::Test
 
     void startServer()
     {
-        ConfigOpts sopts {"localhost:8855", "localhost:8856", 5.0, 5.0, 0, 0, "localhost:28281/sendrawtransaction", 1000};
+        ConfigOpts sopts {start_args.config_path, "localhost:8855", "localhost:8856", 5.0, 5.0, 0, 0, "localhost:28281/sendrawtransaction", 1000};
         Router router;
         Router::Handler3 h3(nullptr, jsonRpcHandler, nullptr);
         router.addRoute("/jsonrpc/test", METHOD_POST, h3);

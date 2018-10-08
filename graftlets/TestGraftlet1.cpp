@@ -55,7 +55,7 @@ public:
         return graft::Status::Ok;
     }
 
-    virtual void initOnce()
+    virtual void initOnce(const ConfigVars& vars)
     {
 //        REGISTER_ACTION(TestGraftlet1, testUndefined);
         REGISTER_ACTION(TestGraftlet1, testInt1);

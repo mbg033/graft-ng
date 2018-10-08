@@ -29,14 +29,15 @@
 
 #include <misc_log_ex.h>
 #include <gtest/gtest.h>
-#include <inout.h>
-#include <jsonrpc.h>
-#include <connection.h>
-#include <router.h>
-#include <requests.h>
-#include <requests/getinforequest.h>
-#include <requests/sendrawtxrequest.h>
-#include <requests/authorizertatxrequest.h>
+#include "inout.h"
+#include "jsonrpc.h"
+#include "connection.h"
+#include "router.h"
+#include "requests.h"
+#include "requests/getinforequest.h"
+#include "requests/sendrawtxrequest.h"
+#include "requests/authorizertatxrequest.h"
+#include "test.h"
 
 
 // cryptonode includes
@@ -69,7 +70,7 @@ struct CryptonodeHandlersTest : public ::testing::Test
         LOG_PRINT_L1("L1");
         LOG_PRINT_L2("L2");
 
-        ConfigOpts copts {"localhost:8855", "localhost:8856", 5.0, 5.0, 0, 0, "localhost:28281/sendrawtransaction", 1000};
+        ConfigOpts copts {start_args.config_path, "localhost:8855", "localhost:8856", 5.0, 5.0, 0, 0, "localhost:28281/sendrawtransaction", 1000};
         looper = std::make_unique<Looper>(copts);
 
         Router router;

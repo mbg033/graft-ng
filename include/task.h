@@ -100,6 +100,7 @@ using ThreadPoolX = tp::ThreadPoolImpl<tp::FixedFunction<void(), sizeof(GJPtr)>,
 
 struct ConfigOpts
 {
+    std::string config_path;
     std::string http_address;
     std::string coap_address;
     double http_connection_timeout;

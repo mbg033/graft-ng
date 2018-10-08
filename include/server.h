@@ -38,6 +38,7 @@ private:
     void setCoapRouters(CoapConnectionManager& coapcm);
     static void checkRoutes(graft::ConnectionManager& cm);
     ConfigOpts& getCopts() { assert(m_looper); return m_looper->getCopts(); }
+    std::vector<std::pair<std::string,std::string>> getConfigSectionVars(const std::string& section);
 
     std::unique_ptr<graft::Looper> m_looper;
     std::unique_ptr<graftlet::GraftletLoader> m_graftletLoader;

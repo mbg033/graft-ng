@@ -35,6 +35,13 @@ start_args_tag start_args;
 int main(int argc, char **argv)
 {
     start_args = {argc, (const char**)argv};
+    {
+        namespace fs = boost::filesystem;
+
+        fs::path selfpath = argv[0];
+        selfpath = selfpath.remove_filename();
+        start_args.config_path  = (selfpath / "config.ini").string();
+    }
 
     mlog_configure("test.log", false);
     mlog_set_log_level(2);

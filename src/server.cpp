@@ -60,7 +60,12 @@ GraftServer::~GraftServer()
 void GraftServer::initGraftlets()
 {
     if(m_graftletLoader) return;
-    m_graftletLoader = std::make_unique<graftlet::GraftletLoader>();
+    using GL = graftlet::GraftletLoader;
+    GL::ConfigResolver resolver = [this](const GL::DllName& dllName)->GL::ConfigVars
+    {
+        return getConfigSectionVars(dllName);
+    };
+    m_graftletLoader = std::make_unique<graftlet::GraftletLoader>(resolver);
     LOG_PRINT_L1("Searching graftlets");
     for(auto& it : getCopts().graftlet_dirs)
     {
@@ -420,6 +425,8 @@ bool GraftServer::initConfigOption(int argc, const char** argv, ConfigOpts& conf
         config_filename  = (selfpath / "config.ini").string();
     }
 
+    configOpts.config_path = config_filename;
+
     boost::property_tree::ini_parser::read_ini(config_filename, config);
     // now we have only following parameters
     // [server]
@@ -489,6 +496,26 @@ bool GraftServer::initConfigOption(int argc, const char** argv, ConfigOpts& conf
     });
 
     return true;
+}
+
+std::vector<std::pair<std::string,std::string>> GraftServer::getConfigSectionVars(const std::string& section)
+{
+    std::vector<std::pair<std::string,std::string>> res;
+    ConfigOpts& configOpts = getCopts();
+
+    boost::property_tree::ptree config;
+    boost::property_tree::ini_parser::read_ini(configOpts.config_path, config);
+
+    const boost::optional<boost::property_tree::ptree&> sect = config.get_child_optional(section);
+    if(!sect) return res;
+
+    for(auto& item : sect.get())
+    {
+        std::string key = item.first;
+        std::string val = details::trim_comments(item.second.data());
+        res.emplace_back(std::make_pair(std::move(key), std::move(val)));
+    }
+    return res;
 }
 
 void GraftServer::prepareDataDirAndSupernodes()

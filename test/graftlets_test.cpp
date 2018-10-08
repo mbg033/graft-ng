@@ -336,6 +336,7 @@ class GraftServerTest : public ::testing::Test
     protected:
         virtual bool initConfigOption(int argc, const char** argv, graft::ConfigOpts& copts) override
         {
+            copts.config_path = start_args.config_path;
             copts.http_address = "0.0.0.0:28690";
             copts.coap_address = "udp://0.0.0.0:18991";
             copts.workers_count = 0;

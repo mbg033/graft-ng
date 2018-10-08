@@ -26,17 +26,18 @@ public:
     using EndpointPath = std::string;
     using Methods = int;
     using EndpointsVec = std::vector< std::tuple<EndpointPath, Methods, graft::Router::Handler> >;
+    using ConfigVars = std::vector<std::pair<std::string,std::string>>;
 
     IGraftlet() = delete;
     virtual ~IGraftlet() = default;
     IGraftlet(const IGraftlet&) = delete;
     IGraftlet& operator = (const IGraftlet&) = delete;
 
-    void init()
+    void init(const ConfigVars& vars)
     {
         if(m_inited) return;
         m_inited = true;
-        initOnce();
+        initOnce(vars);
     }
 
     const ClsName& getClsName() const { return m_clsName; }
@@ -129,7 +130,7 @@ public:
     }
 protected:
     IGraftlet(const ClsName& name = ClsName() ) : m_clsName(name) { }
-    virtual void initOnce() = 0;
+    virtual void initOnce(const ConfigVars& vars) = 0;
 private:
     using TypeIndex2any = std::map<std::type_index, std::tuple<std::any, EndpointPath, Methods> >;
     using Map = std::map<FuncName, TypeIndex2any>;

@@ -98,12 +98,16 @@ public:
     }
 };
 
-class GraftletLoader
+class GraftletLoader final
 {
 public:
     using DllName = std::string;
     using Version = int;
     using GraftletExceptionList = std::vector< std::pair< DllName, std::vector< std::pair<Version, Version> >>>;
+    using ConfigVars = std::vector<std::pair<std::string,std::string>>;
+    using ConfigResolver = std::function<ConfigVars(const DllName& section)>;
+
+    GraftletLoader(ConfigResolver configResolver = nullptr) : m_configResolver(configResolver) { }
 
     static Version getFwVersion() { return m_fwVersion; }
     static void setFwVersion(Version fwVersion) { m_fwVersion = fwVersion; }
@@ -187,7 +191,12 @@ private:
             GraftletRegistry* gr = it1->second;
             std::shared_ptr<BaseT> concreteGraftlet = gr->resolveGraftlet<BaseT>();
             if(!concreteGraftlet.get()) throw std::runtime_error("Cannot resolve dll name:" + dllName + " type:" + typeid(BaseT).name());
-            concreteGraftlet->init();
+            ConfigVars vars;
+            if(m_configResolver)
+            {
+                vars = m_configResolver(dllName);
+            }
+            concreteGraftlet->init(vars);
             ClsName name = concreteGraftlet->getClsName();
             std::any any(concreteGraftlet);
 
@@ -265,6 +274,8 @@ private:
     //dll (name, type_index of BaseT) -> (class name, any of BaseT)
     //it makes no sense to hold std::shared_ptr<IGraftlet> until the shared_ptr is returned from resolveGraftlet
     std::map< std::pair<DllName, std::type_index>, std::map<ClsName, std::any> > m_name2gls;
+
+    ConfigResolver m_configResolver;
 };
 
 #ifdef INCLUDE_GRAPH
