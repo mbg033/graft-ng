@@ -7,7 +7,7 @@
 #include <functional>
 #include <chrono>
 #include <mutex>
-//#include <shared_mutex>
+#include <shared_mutex>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/shared_mutex.hpp>
 
@@ -64,6 +64,9 @@ namespace graft
 
     public:
         using func = std::function<bool(T&)>;
+        using NodePtr = std::shared_ptr<node>;
+        //return true to continue
+        using FuncNode = std::function<bool(NodePtr& node_ptr)>;
         using OnExpired = typename node::OnExpired;
 
         TSList() {}
@@ -100,6 +103,22 @@ namespace graft
                     next->update_time();
 
                 f(*next->data);
+                current = next;
+                lk = std::move(next_lk);
+            }
+        }
+
+        void forEachNode(FuncNode f)
+        {
+            NodePtr* current = &head;
+            std::unique_lock<std::mutex> lk((*current)->m);
+
+            while (NodePtr* next = &(*current)->next)
+            {
+                std::unique_lock<std::mutex> next_lk((*next)->m);
+                lk.unlock();
+
+                if(!f(*next)) return;
                 current = next;
                 lk = std::move(next_lk);
             }
@@ -252,6 +271,13 @@ namespace graft
                     {return item.first == key;}
                 );
             }
+        public:
+            using FuncNode = typename BucketData::FuncNode;
+
+            void forEachNode(FuncNode f)
+            {
+                m_data.forEachNode(f);
+            }
 
         public:
             mutable boost::shared_mutex blk;
@@ -332,6 +358,103 @@ namespace graft
                 f();
             }
         }
+    public:
+        class Group
+        {
+        private:
+            using node = typename BucketType::BucketData::node;
+            using NodePtr = std::shared_ptr<node>;
+            using ForEachFuncPrivate = std::function<bool(const Key& key, Value& val, bool deleted)>;
+
+            void forEachUnsafe(ForEachFuncPrivate& f)
+            {
+                for(auto it = m_map.begin(), eit = m_map.end(); it != eit; )
+                {
+                    Key& key = it->first;
+                    NodePtr& ptr = it->second;
+                    std::unique_lock<std::mutex> lk(ptr->m);
+
+                    bool res = f(key, *ptr->data, ptr->deleted);
+                    if(ptr->deleted)
+                    {
+                        auto tmp = it++;
+                        m_map.erase(tmp);
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                    if(!res) return;
+                }
+            }
+
+            TSHashtable& m_table;
+            mutable std::shared_mutex m_mutex;
+            std::map<Key, NodePtr> m_map;
+        public:
+            using ForEachFunc = ForEachFuncPrivate;
+
+            Group(TSHashtable& table) : m_table(table) { }
+            bool add(const Key& key)
+            {
+                std::unique_lock<std::shared_mutex> lk(m_mutex);
+
+                //check existing
+                auto it = m_map.find(key);
+                if(it != m_map.end()) return false;
+
+                BucketType& b = m_table.getBucket(key);
+                boost::shared_lock<boost::shared_mutex> lock(b.blk);
+
+                bool res;
+                auto f = [this, &key, &res](NodePtr& ptr)->bool
+                {
+                    if(ptr->data->first == key && !ptr->deleted)
+                    {
+                        res = true;
+                        m_map.emplace(std::make_pair(key, ptr));
+                        return false;
+                    }
+                    return true;
+                };
+                b.forEachNode(f);
+
+                return res;
+            }
+
+            bool remove(const Key& key)
+            {
+                std::unique_lock<std::shared_mutex> lk(m_mutex);
+
+                //check existing
+                auto it = m_map.find(key);
+                if(it == m_map.end()) return false;
+
+                NodePtr& ptr = it.second;
+                ptr->deleted = true;
+
+                m_map.erase(it);
+                return true;
+            }
+
+            void forEachUnique(ForEachFunc& f)
+            {
+                std::unique_lock<std::shared_mutex> lk(m_mutex);
+                forEachUnsafe(f);
+            }
+
+            void forEachShared(ForEachFunc& f)
+            {
+                std::shared_lock<std::shared_mutex> lk(m_mutex);
+                forEachUnsafe(f);
+            }
+        };
+
+        Group create_group(const std::vector<Key>& keys)
+        {
+
+        }
+
     public:
         using OnExpired = typename BucketType::OnExpired;
 
